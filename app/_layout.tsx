@@ -1,10 +1,13 @@
-import { Stack } from 'expo-router';
-import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import 'react-native-reanimated';
+
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as Notifications from 'expo-notifications';
 
-// Muestra la notificación aunque la app esté abierta
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -15,7 +18,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Canal de Android con tu alarm.mp3
 if (Platform.OS === 'android') {
   Notifications.setNotificationChannelAsync('alarm', {
     name: 'Alarmas',
@@ -26,36 +28,67 @@ if (Platform.OS === 'android') {
   });
 }
 
+export const unstable_settings = {
+  anchor: '(tabs)',
+};
+
 export default function RootLayout() {
+  const colorScheme = useColorScheme();
   const router = useRouter();
 
+  // ← CLAVE: guardamos la señal de navegar en un state,
+  // no llamamos router.push() directamente desde el listener
+  const [navigateToPuzzle, setNavigateToPuzzle] = useState(false);
+
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
+
+  // ── Efecto 1: registrar los listeners ──────────────────────────────────────
   useEffect(() => {
-    // Cuando la app está abierta y llega la alarma
-    const subReceived = Notifications.addNotificationReceivedListener(() => {
-      router.push('/puzzle');
+    // App en FOREGROUND — alarma llega sin que el usuario toque
+    notificationListener.current = Notifications.addNotificationReceivedListener(() => {
+      console.log('🔔 Alarma en foreground');
+      setNavigateToPuzzle(true);
     });
 
-    // Cuando el usuario toca la notificación desde fuera de la app
-    const subResponse = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/puzzle');
+    // App en BACKGROUND — usuario toca la notificación
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {
+      console.log('👆 Usuario tocó la notificación');
+      setNavigateToPuzzle(true);
+    });
+
+    // App CERRADA — se abrió desde la notificación (cold start)
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        console.log('🚀 Cold start desde notificación');
+        setNavigateToPuzzle(true);
+      }
     });
 
     return () => {
-      subReceived.remove();
-      subResponse.remove();
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
     };
   }, []);
 
+  // ── Efecto 2: navegar cuando el router YA esté listo ──────────────────────
+  useEffect(() => {
+    if (navigateToPuzzle) {
+      router.push('/puzzle');
+      setNavigateToPuzzle(false);
+    }
+  }, [navigateToPuzzle]);
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="puzzle"
-        options={{
-          presentation: 'fullScreenModal', // cubre todo, sin tab bar
-          gestureEnabled: false,           // no se puede deslizar para cerrar
-        }}
-      />
-    </Stack>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="alarms" options={{ title: 'Alarmas' }} />
+        <Stack.Screen name="puzzle" options={{ headerShown: false }} />
+        <Stack.Screen name="add-alarm" options={{ title: 'Nueva alarma' }} />
+      </Stack>
+      <StatusBar style="auto" />
+    </ThemeProvider>
   );
 }
