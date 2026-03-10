@@ -1,51 +1,61 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
+import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-// ← Agrega esto ANTES del componente, fuera de todo
+
+// Muestra la notificación aunque la app esté abierta
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowBanner: true,  // ← nuevo
-    shouldShowList: true,    // ← nuevo
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
-import { Platform } from 'react-native';
-// Después del setNotificationHandler
+// Canal de Android con tu alarm.mp3
 if (Platform.OS === 'android') {
   Notifications.setNotificationChannelAsync('alarm', {
-  name: 'Alarmas',
-  importance: Notifications.AndroidImportance.MAX,
-  sound: 'alarm.mp3', // ← nombre del archivo
-  vibrationPattern: [0, 250, 250, 250],
-  enableVibrate: true,
-});
+    name: 'Alarmas',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'alarm.mp3',
+    vibrationPattern: [0, 250, 250, 250],
+    enableVibrate: true,
+  });
 }
 
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
-
 export default function RootLayout() {
+  const router = useRouter();
 
-  const colorScheme = useColorScheme();
+  useEffect(() => {
+    // Cuando la app está abierta y llega la alarma
+    const subReceived = Notifications.addNotificationReceivedListener(() => {
+      router.push('/puzzle');
+    });
+
+    // Cuando el usuario toca la notificación desde fuera de la app
+    const subResponse = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/puzzle');
+    });
+
+    return () => {
+      subReceived.remove();
+      subResponse.remove();
+    };
+  }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen
+        name="puzzle"
+        options={{
+          presentation: 'fullScreenModal', // cubre todo, sin tab bar
+          gestureEnabled: false,           // no se puede deslizar para cerrar
+        }}
+      />
+    </Stack>
   );
 }
